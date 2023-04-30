@@ -1,0 +1,12 @@
+data_dir = "{{ vector_data_dir }}"
+
+# Input data. Change me to a valid input source.
+[sources.in]
+  type = "stdin"
+
+# Output data
+[sinks.out]
+  inputs   = ["in"]
+  type     = "console"
+  encoding.codec = "text"
+

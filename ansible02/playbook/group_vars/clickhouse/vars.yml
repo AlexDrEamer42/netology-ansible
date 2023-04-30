@@ -1,0 +1,14 @@
+---
+clickhouse_version: "22.3.10.22"
+clickhouse_packages:
+  - clickhouse-client
+  - clickhouse-server
+  - clickhouse-common-static
+
+vector_version: "0.29.1"
+vector_config_template_path: "vector.toml.j2"
+vector_service_template_path: "vector.service.j2"
+vector_data_dir: "/var/lib/vector"
+vector_documentation_link: https://vector.dev/docs/about/what-is-vector/
+vector_log_output: journal
+vector_syslog_identifier: vector

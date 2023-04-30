@@ -1,0 +1,106 @@
+---
+- name: Install Clickhouse
+  hosts: clickhouse
+  handlers:
+    - name: Start clickhouse service
+      become: true
+      ansible.builtin.service:
+        name: clickhouse-server
+        state: restarted
+      tags: clickhouse
+  tasks:
+    - block:
+        - name: Get clickhouse distrib
+          ansible.builtin.get_url:
+            url: "https://packages.clickhouse.com/rpm/stable/{{ item }}-{{ clickhouse_version }}.x86_64.rpm"
+            dest: "./{{ item }}-{{ clickhouse_version }}.rpm"
+          with_items: "{{ clickhouse_packages }}"
+          tags: clickhouse
+      rescue:
+        - name: Get clickhouse distrib
+          ansible.builtin.get_url:
+            url: "https://packages.clickhouse.com/rpm/stable/clickhouse-common-static-{{ clickhouse_version }}.x86_64.rpm"
+            dest: "./clickhouse-common-static-{{ clickhouse_version }}.rpm"
+          tags: clickhouse
+    - name: Install clickhouse packages
+      become: true
+      ansible.builtin.yum:
+        name:
+          - clickhouse-common-static-{{ clickhouse_version }}.rpm
+          - clickhouse-client-{{ clickhouse_version }}.rpm
+          - clickhouse-server-{{ clickhouse_version }}.rpm
+      notify: Start clickhouse service
+      tags: clickhouse
+      ignore_errors: "{{ ansible_check_mode }}"
+    - name: Flush handlers
+      meta: flush_handlers
+      tags: clickhouse
+    - name: Create database
+      ansible.builtin.command: "clickhouse-client -q 'create database logs;'"
+      register: create_db
+      failed_when: create_db.rc != 0 and create_db.rc !=82
+      changed_when: create_db.rc == 0
+      tags: clickhouse
+- name: Deploy Vector
+  hosts: clickhouse
+  handlers:
+    - name: restart-vector
+      become: true
+      ansible.builtin.systemd:
+        name: vector
+        state: restarted
+      tags: vector
+      ignore_errors: "{{ ansible_check_mode }}"
+  tasks:
+    - name: Get Vector version
+      ansible.builtin.command: vector --version
+      register: is_installed
+      ignore_errors: true
+      changed_when: false
+      tags: vector
+    - name: Get RPM
+      ansible.builtin.get_url:
+        url: 'https://packages.timber.io/vector/{{ vector_version }}/vector-{{ vector_version }}-1.x86_64.rpm'
+        dest: "{{ ansible_user_dir }}/vector.rpm"
+        mode: 0755
+      when:
+        - is_installed is failed
+        - ansible_distribution == "CentOS"
+      tags: vector
+    - name: Install Vector
+      become: true
+      ansible.builtin.yum:
+        name:
+          - vector.rpm
+      when:
+        - is_installed is failed
+      tags: vector
+    - name: Configure Vector
+      become: true
+      ansible.builtin.template:
+        src: "{{ vector_config_template_path }}"
+        dest: /etc/vector/vector.toml
+        owner: root
+        group: root
+        mode: 0755
+      notify: restart-vector
+      tags: vector
+    - name: Copy daemon script
+      become: true
+      ansible.builtin.template:
+        src: "{{ vector_service_template_path }}"
+        dest: /etc/systemd/system/vector.service
+        mode: 0755
+        owner: root
+        group: root
+      notify: restart-vector
+      tags: vector
+    - name: Configuring service
+      become: true
+      ansible.builtin.systemd:
+        name: vector
+        state: started
+        enabled: true
+        daemon_reload: true
+      tags: vector
+      ignore_errors: "{{ ansible_check_mode }}"
