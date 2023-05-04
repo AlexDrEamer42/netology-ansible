@@ -1,0 +1,22 @@
+---
+clickhouse:
+  hosts:
+    clickhouse-01:
+      ansible_host: 51.250.27.160
+      ansible_connection: ssh
+      ansible_user: centos
+      ansible_ssh_private_key_file: "~/.ssh/id_rsa"
+lighthouse:
+  hosts:
+    lighthouse-01:
+      ansible_host: 158.160.17.45
+      ansible_connection: ssh
+      ansible_user: centos
+      ansible_ssh_private_key_file: "~/.ssh/id_rsa"
+vector:
+  hosts:
+    vector-01:
+      ansible_host: 158.160.25.121
+      ansible_connection: ssh
+      ansible_user: centos
+      ansible_ssh_private_key_file: "~/.ssh/id_rsa"

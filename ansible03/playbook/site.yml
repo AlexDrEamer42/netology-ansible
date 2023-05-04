@@ -1,0 +1,153 @@
+---
+- name: Install Nginx
+  hosts: lighthouse
+  handlers:
+    - name: start-nginx
+      become: true
+      command: nginx
+      tags: nginx
+    - name: reload-nginx
+      become: true
+      command: nginx -s reload
+      tags: nginx
+  tasks:
+    - name: NGINX | Install epel-release
+      become: true
+      ansible.builtin.yum:
+        name: epel-release
+        state: present
+      tags: nginx
+    - name: NGINX | Install NGINX
+      become: true
+      ansible.builtin.yum:
+        name: nginx
+        state: present
+      notify: start-nginx
+      ignore_errors: "{{ ansible_check_mode }}"
+      tags: nginx
+    - name: NGINX | Create file for lighthouse config
+      become: true
+      ansible.builtin.file:
+        path: /etc/nginx/conf.d/lighthouse.conf
+        state: touch
+        mode: 0644
+      tags: nginx
+    - name: NGINX | Create general config
+      become: true
+      template:
+        src: templates/nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+        mode: 0644
+      notify: reload-nginx
+      tags: nginx
+- name: Install LightHouse
+  hosts: lighthouse
+  handlers:
+    - name: reload-nginx
+      become: true
+      command: nginx -s reload
+      tags: lighthouse
+  pre_tasks:
+    - name: Lighthouse | Install dependencies
+      become: true
+      ansible.builtin.yum:
+        name: git
+        state: present
+      tags: lighthouse
+  tasks:
+    - name: Lighthouse | Copy from git
+      become: true
+      git:
+        repo: "{{ lighthouse_vcs }}"
+        version: master
+        dest: "{{ lighthouse_location_dir }}"
+      ignore_errors: "{{ ansible_check_mode }}"
+      tags: lighthouse
+    - name: Lighthouse | Create lighthouse config
+      become: true
+      template:
+        src: lighthouse.conf.j2
+        dest: /etc/nginx/conf.d/lighthouse.conf
+        mode: 0644
+      notify: reload-nginx
+      tags: lighthouse
+- name: Install Clickhouse
+  hosts: clickhouse
+  handlers:
+    - name: Start clickhouse service
+      become: true
+      ansible.builtin.service:
+        name: clickhouse-server
+        state: restarted
+      ignore_errors: "{{ ansible_check_mode }}"
+      tags: clickhouse
+  tasks:
+    - block:
+        - name: Clickhouse | Get distrib
+          ansible.builtin.get_url:
+            url: "https://packages.clickhouse.com/rpm/stable/{{ item }}-{{ clickhouse_version }}.x86_64.rpm"
+            dest: "./{{ item }}-{{ clickhouse_version }}.rpm"
+          with_items: "{{ clickhouse_packages }}"
+          check_mode: false
+          tags: clickhouse
+      rescue:
+        - name: Clickhouse | Get reserve distrib
+          ansible.builtin.get_url:
+            url: "https://packages.clickhouse.com/rpm/stable/clickhouse-common-static-{{ clickhouse_version }}.x86_64.rpm"
+            dest: "./clickhouse-common-static-{{ clickhouse_version }}.rpm"
+          check_mode: false
+          tags: clickhouse
+    - name: Clickhouse | Install packages
+      become: true
+      ansible.builtin.yum:
+        name:
+          - clickhouse-common-static-{{ clickhouse_version }}.rpm
+          - clickhouse-client-{{ clickhouse_version }}.rpm
+          - clickhouse-server-{{ clickhouse_version }}.rpm
+      notify: Start clickhouse service
+      tags: clickhouse
+      ignore_errors: "{{ ansible_check_mode }}"
+    - name: Clickhouse | Flush handlers
+      ansible.builtin.meta: flush_handlers
+      tags: clickhouse
+    - name: Clickhouse | Create database
+      ansible.builtin.command: "clickhouse-client -q 'create database logs;'"
+      register: create_db
+      failed_when: create_db.rc != 0 and create_db.rc !=82
+      changed_when: create_db.rc == 0
+      tags: clickhouse
+- name: Install Vector
+  hosts: vector
+  tasks:
+    - name: Vector | Install rpm
+      become: true
+      ansible.builtin.yum:
+        name: "{{ vector_url }}"
+        state: present
+      tags: vector
+    - name: Vector | Template config
+      ansible.builtin.template:
+        src: vector.yaml.j2
+        dest: vector.yaml
+        mode: 0644
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_gid }}"
+        validate: vector validate --no-environment --config-yaml %s
+      tags: vector
+    - name: Vector | Create systemd unit
+      become: true
+      ansible.builtin.template:
+        src: vector.service.j2
+        dest: /etc/systemd/system/vector.service
+        mode: 0644
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_gid }}"
+      tags: vector
+    - name: Vector | Start service
+      become: true
+      ansible.builtin.systemd:
+        name: vector
+        state: started
+        daemon_reload: true
+      ignore_errors: "{{ ansible_check_mode }}"
+      tags: vector

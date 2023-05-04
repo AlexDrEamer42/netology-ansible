@@ -1,0 +1,6 @@
+---
+vector_url: "https://packages.timber.io/vector/0.29.1/vector-0.29.1-1.x86_64.rpm"
+vector_data_dir: "/var/lib/vector"
+vector_documentation_link: https://vector.dev/docs/about/what-is-vector/
+vector_log_output: journal
+vector_syslog_identifier: vector
